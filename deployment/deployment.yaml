@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supercronic-runner
+  labels:
+    app: supercronic-runner
+spec:
+  replicas: 1 # 重要：避免同一任務跨 Pod 重複執行
+  selector:
+    matchLabels:
+      app: supercronic-runner
+  template:
+    metadata:
+      labels:
+        app: supercronic-runner
+      # 若改用 checksum 觸發滾動更新, 可在此放置 crontab 的 checksum
+      # annotations:
+      #   configmap.crontab.checksum: "<sha256-of-crontab>"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 2000
+      initContainers:
+        - name: crontab-lint
+          image: your-image-with-supercronic:tag
+          command: ["/usr/local/bin/supercronic", "-test", "/app/crontab/crontab"]
+          volumeMounts:
+            - name: crontab
+              mountPath: /app/crontab
+              readOnly: true
+      containers:
+        - name: supercronic
+          image: your-image-with-supercronic:tag
+          imagePullPolicy: IfNotPresent
+          args:
+            # 監控檔案變更 + 啟用指標 + 分流 stdout/stderr 日誌 + 指定 crontab 檔案
+            - "-inotify"
+            - "-prometheus-listen-address=:9746"
+            - "-split-logs"
+            - "/app/crontab/crontab"
+          env:
+            - name: TZ
+              value: "Asia/Taipei"
+            # 用 downward API 提供可觀測性標籤
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef: { fieldPath: metadata.namespace }
+          ports:
+            - name: metrics
+              containerPort: 9746
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: crontab
+              mountPath: /app/crontab
+              readOnly: true
+            - name: scripts
+              mountPath: /app/scripts
+              readOnly: true
+      volumes:
+        - name: crontab
+          configMap:
+            name: supercronic-crontab
+            # 注意：使用 -inotify 時, ConfigMap 不可 immutable
+            # immutable: true # 若改用 checksum 滾動更新才建議設為 true
+        - name: scripts
+          configMap:
+            name: supercronic-scripts
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supercronic-crontab
+data:
+  crontab: |
+    # ====== 範例：以 GNU timeout 做 deadline 控制 ======
+    # 每 5 分鐘執行, 25 秒沒完成就 TERM, 30 秒後仍未結束再 KILL
+    */5 * * * * timeout --signal=TERM --kill-after=30s 25s /app/scripts/dummy-job.sh
+
+    # 也可同時維護多條任務, Supercronic 支援秒級欄位（第 6/7 欄）
+    # */10 * * * * * * /app/scripts/another-job.sh
+
+    # 指定 cron 的時區（可與容器 TZ 不同）
+    # CRON_TZ=UTC
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supercronic-scripts
+data:
+  dummy-job.sh: |
+    #!/usr/bin/env bash
+    set -Eeuo pipefail
+    echo "[${POD_NAMESPACE}/${POD_NAME}] run at $(date -Is)"
+    # 在此執行實際工作邏輯…
+    exit 0
+---
+# （選用）若你要由 Prometheus Operator 抓取 /metrics：
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: supercronic
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: supercronic-runner
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: supercronic-metrics
+  labels:
+    app: supercronic-runner
+spec:
+  selector:
+    app: supercronic-runner
+  ports:
+    - name: metrics
+      port: 9746
+      targetPort: metrics
