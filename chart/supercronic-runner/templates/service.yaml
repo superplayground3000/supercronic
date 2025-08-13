@@ -1,0 +1,15 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "supercronic.fullname" . }}-metrics
+  labels:
+    app.kubernetes.io/name: {{ include "supercronic.fullname" . }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "supercronic.fullname" . }}
+  ports:
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+{{- end }}

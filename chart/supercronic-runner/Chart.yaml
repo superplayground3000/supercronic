@@ -1,0 +1,6 @@
+apiVersion: v2
+name: supercronic-runner
+description: Run cron-like workloads using Supercronic in a single-replica Deployment with metrics and checksum-driven rollouts
+type: application
+version: 0.1.0
+appVersion: "0.2.34"

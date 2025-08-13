@@ -1,0 +1,45 @@
+image:
+  repository: your-repo/your-image-with-supercronic
+  tag: "0.2.34"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+timezone: "Asia/Taipei"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+metrics:
+  enabled: true
+  port: 9746
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    additionalLabels:
+      release: "kube-prometheus-stack"
+
+# Write your cron entries here (multiple lines = multiple jobs).
+# Use GNU timeout to enforce deadlines per job.
+crontab: |
+  */5 * * * * timeout --signal=TERM --kill-after=30s 25s /app/scripts/dummy-job.sh
+
+# Script files mounted read-only at /app/scripts (defaultMode 0755)
+scripts:
+  dummy-job.sh: |
+    #!/usr/bin/env bash
+    set -Eeuo pipefail
+    echo "[${POD_NAMESPACE}/${POD_NAME}] run at $(date -Is)"
+    exit 0

@@ -1,0 +1,9 @@
+# Common Helm ignores
+*.swp
+*.bak
+*.tmp
+.DS_Store
+.git/
+.svn/
+.cvsignore
+*.orig

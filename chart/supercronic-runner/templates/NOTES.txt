@@ -1,0 +1,14 @@
+1) Edit values.yaml
+   - Set .image.repository / .tag to your image that contains /usr/local/bin/supercronic
+   - Put your cron entries in .Values.crontab (use GNU 'timeout' for deadlines)
+   - Optionally add scripts under .Values.scripts
+
+2) Install / Upgrade:
+   helm upgrade --install my-jobs ./supercronic-runner -f values.yaml
+
+3) Verify:
+   kubectl logs deploy/my-jobs-supercronic-runner
+   kubectl get svc my-jobs-supercronic-runner-metrics
+
+4) Prometheus (if Operator installed):
+   Set metrics.serviceMonitor.enabled=true
